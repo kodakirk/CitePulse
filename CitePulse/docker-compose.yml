@@ -1,0 +1,61 @@
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: citepulse
+      POSTGRES_PASSWORD: citepulse_password
+      POSTGRES_DB: citepulse
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U citepulse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Backend API (accessible on LAN via port 8000)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://citepulse:citepulse_password@db:5432/citepulse
+    ports:
+      - "0.0.0.0:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # Frontend UI (accessible on LAN via port 8501)
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    environment:
+      - DOCKER_COMPOSE=true
+      - API_URL=http://api:8000
+      - STREAMLIT_THEME_PRIMARY_COLOR=#6B3FA0
+    ports:
+      - "0.0.0.0:8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
